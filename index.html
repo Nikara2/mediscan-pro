@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scanner Intelligent de Carte d'Assurance</title>
+    <!-- Chargement des librairies externes -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady()"></script>
+
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #10b981;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--surface);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            background: #e2e8f0;
+            color: #64748b;
+        }
+
+        .status-badge.ready {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-badge.processing {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 2rem;
+            padding: 2rem;
+            height: calc(100vh - 80px);
+        }
+
+        /* Zone Vidéo */
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        canvas#overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .scan-guide {
+            position: absolute;
+            border: 2px dashed rgba(255, 255, 255, 0.5);
+            border-radius: 12px;
+            width: 60%;
+            height: 40%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.3s ease;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+        }
+
+        .scan-guide.active {
+            border-color: var(--success);
+            border-style: solid;
+            border-width: 4px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+        }
+
+        /* Panneau Latéral */
+        aside {
+            background: var(--surface);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .preview-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 1rem;
+        }
+
+        .img-preview {
+            background: #f1f5f9;
+            border-radius: 0.5rem;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .img-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .img-preview span {
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+
+        .data-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .data-group label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            font-weight: 600;
+        }
+
+        .data-value {
+            padding: 0.75rem;
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            font-weight: 500;
+            min-height: 1.5rem;
+        }
+
+        .data-value.empty {
+            color: #cbd5e1;
+            font-style: italic;
+        }
+
+        .success-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(16, 185, 129, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            z-index: 10;
+        }
+
+        .success-overlay.show {
+            opacity: 1;
+        }
+
+        .check-icon {
+            font-size: 5rem;
+            color: var(--success);
+            background: white;
+            border-radius: 50%;
+            width: 100px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Utilitaires cachés pour le traitement */
+        #processing-canvas {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <line x1="7" y1="8" x2="17" y2="8" />
+                <line x1="7" y1="12" x2="17" y2="12" />
+                <line x1="7" y1="16" x2="12" y2="16" />
+            </svg>
+            MediScan Pro
+        </h1>
+        <div id="system-status" class="status-badge">Initialisation...</div>
+    </header>
+
+    <main>
+        <div class="video-container">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <div id="scan-guide" class="scan-guide"></div>
+            <div id="success-feedback" class="success-overlay">
+                <div class="check-icon">✓</div>
+            </div>
+        </div>
+
+        <aside>
+            <div class="preview-section">
+                <div class="img-preview" id="card-preview">
+                    <span>Carte Complète</span>
+                </div>
+                <div class="img-preview" id="face-preview">
+                    <span>Photo</span>
+                </div>
+            </div>
+
+            <div class="data-group">
+                <label>Nom / Assuré</label>
+                <div id="res-name" class="data-value empty">En attente...</div>
+            </div>
+            <div class="data-group">
+                <label>Numéro de Police</label>
+                <div id="res-policy" class="data-value empty">En attente...</div>
+            </div>
+            <div class="data-group">
+                <label>Numéro Assuré</label>
+                <div id="res-id" class="data-value empty">En attente...</div>
+            </div>
+            <div class="data-group">
+                <label>Date / Âge</label>
+                <div id="res-date" class="data-value empty">En attente...</div>
+            </div>
+            <div class="data-group">
+                <label>Sexe</label>
+                <div id="res-sex" class="data-value empty">En attente...</div>
+            </div>
+        </aside>
+    </main>
+
+    <canvas id="processing-canvas"></canvas>
+
+    <script>
+        // --- Configuration ---
+        const CONFIG = {
+            stabilityDuration: 1500, // ms
+            stabilityTolerance: 0.05, // 5% de mouvement toléré
+            minContourArea: 10000,
+            aspectRatioTolerance: 0.2, // Tolérance pour le ratio carte de crédit (1.58)
+            cardAspectRatio: 1.586
+        };
+
+        // --- État Global ---
+        let state = {
+            opencvReady: false,
+            isScanning: true,
+            lastContour: null,
+            stabilityStart: 0,
+            stream: null
+        };
+
+        // --- Éléments DOM ---
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const ctxOverlay = overlay.getContext('2d');
+        const statusBadge = document.getElementById('system-status');
+        const scanGuide = document.getElementById('scan-guide');
+        const successFeedback = document.getElementById('success-feedback');
+
+        // --- Initialisation ---
+        function onOpenCvReady() {
+            console.log('OpenCV.js est prêt');
+            state.opencvReady = true;
+            statusBadge.textContent = "Prêt à scanner";
+            statusBadge.classList.add('ready');
+            startCamera();
+        }
+
+        async function startCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        facingMode: "environment"
+                    }
+                };
+                state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = state.stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    overlay.width = video.videoWidth;
+                    overlay.height = video.videoHeight;
+                    requestAnimationFrame(processVideo);
+                };
+            } catch (err) {
+                console.error("Erreur caméra:", err);
+                alert("Impossible d'accéder à la caméra. Vérifiez les permissions.");
+            }
+        }
+
+        // --- Boucle de Traitement (30 FPS approx) ---
+        let lastFrameTime = 0;
+        const frameInterval = 1000 / 30;
+
+        function processVideo(timestamp) {
+            if (!state.isScanning || !state.opencvReady) {
+                requestAnimationFrame(processVideo);
+                return;
+            }
+
+            if (timestamp - lastFrameTime < frameInterval) {
+                requestAnimationFrame(processVideo);
+                return;
+            }
+            lastFrameTime = timestamp;
+
+            try {
+                detectCard();
+            } catch (e) {
+                console.error("Erreur OpenCV:", e);
+            }
+
+            requestAnimationFrame(processVideo);
+        }
+
+        // --- Vision par Ordinateur (OpenCV) ---
+        function detectCard() {
+            let src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+            let cap = new cv.VideoCapture(video);
+            cap.read(src);
+
+            let gray = new cv.Mat();
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+            // Flou pour réduire le bruit
+            let blurred = new cv.Mat();
+            cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+
+            // Détection de bords Canny
+            let edges = new cv.Mat();
+            cv.Canny(blurred, edges, 75, 200);
+
+            // Trouver les contours
+            let contours = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+            cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+            let maxArea = 0;
+            let bestContour = null;
+            let bestApprox = null;
+
+            for (let i = 0; i < contours.size(); ++i) {
+                let cnt = contours.get(i);
+                let area = cv.contourArea(cnt);
+
+                if (area > CONFIG.minContourArea) {
+                    let peri = cv.arcLength(cnt, true);
+                    let approx = new cv.Mat();
+                    cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+
+                    if (approx.rows === 4) {
+                        // Vérifier si c'est le plus grand rectangle
+                        if (area > maxArea) {
+                            maxArea = area;
+                            bestContour = cnt;
+                            bestApprox = approx;
+                        }
+                    } else {
+                        approx.delete();
+                    }
+                }
+            }
+
+            // Nettoyage overlay
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+
+            if (bestApprox) {
+                // Dessiner le contour détecté
+                drawContour(bestApprox);
+                checkStability(bestApprox, src);
+                bestApprox.delete();
+            } else {
+                // Reset stabilité si perte de focus
+                state.stabilityStart = 0;
+                state.lastContour = null;
+                scanGuide.classList.remove('active');
+            }
+
+            // Nettoyage mémoire
+            src.delete(); gray.delete(); blurred.delete(); edges.delete();
+            contours.delete(); hierarchy.delete();
+        }
+
+        function drawContour(approx) {
+            ctxOverlay.beginPath();
+            ctxOverlay.lineWidth = 4;
+            ctxOverlay.strokeStyle = "#10b981"; // Vert succès
+
+            let data = approx.data32S;
+            ctxOverlay.moveTo(data[0], data[1]);
+            for (let i = 2; i < data.length; i += 2) {
+                ctxOverlay.lineTo(data[i], data[i + 1]);
+            }
+            ctxOverlay.closePath();
+            ctxOverlay.stroke();
+        }
+
+        // --- Logique de Stabilité ---
+        function checkStability(currentApprox, srcMat) {
+            if (!state.lastContour) {
+                state.lastContour = currentApprox.data32S.slice(); // Copie
+                state.stabilityStart = performance.now();
+                return;
+            }
+
+            // Calculer la différence de position (somme des distances des coins)
+            let diff = 0;
+            let currentData = currentApprox.data32S;
+            for (let i = 0; i < 8; i++) {
+                diff += Math.abs(currentData[i] - state.lastContour[i]);
+            }
+
+            // Tolérance basée sur la largeur de la vidéo (pour être responsive)
+            let tolerance = video.videoWidth * CONFIG.stabilityTolerance;
+
+            if (diff < tolerance) {
+                let duration = performance.now() - state.stabilityStart;
+                scanGuide.classList.add('active'); // Feedback visuel
+
+                if (duration > CONFIG.stabilityDuration) {
+                    // STABLE PENDANT 1.5s -> CAPTURE !
+                    captureAndProcess(currentApprox, srcMat);
+                }
+            } else {
+                // Mouvement détecté, reset
+                state.lastContour = currentApprox.data32S.slice();
+                state.stabilityStart = performance.now();
+                scanGuide.classList.remove('active');
+            }
+        }
+
+        // --- Traitement d'Image (Warp & Crop) ---
+        async function captureAndProcess(approx, srcMat) {
+            state.isScanning = false; // Pause scan
+            statusBadge.textContent = "Traitement...";
+            statusBadge.className = "status-badge processing";
+            playBeep();
+
+            // 1. Warp Perspective (Redressement)
+            let cornerArray = [];
+            for (let i = 0; i < 8; i += 2) {
+                cornerArray.push({ x: approx.data32S[i], y: approx.data32S[i + 1] });
+            }
+            // Ordonner les coins: TL, TR, BR, BL
+            cornerArray.sort((a, b) => a.y - b.y);
+            let top = cornerArray.slice(0, 2).sort((a, b) => a.x - b.x);
+            let bottom = cornerArray.slice(2, 4).sort((a, b) => a.x - b.x);
+            let orderedCorners = [...top, ...bottom];
+
+            // Définir la taille de sortie (Standard CR80 card size ratio)
+            let width = 1000;
+            let height = width / CONFIG.cardAspectRatio;
+
+            let dst = new cv.Mat();
+            let dsize = new cv.Size(width, height);
+            let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+                orderedCorners[0].x, orderedCorners[0].y,
+                orderedCorners[1].x, orderedCorners[1].y,
+                orderedCorners[3].x, orderedCorners[3].y,
+                orderedCorners[2].x, orderedCorners[2].y
+            ]);
+            let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, width, 0, 0, height, width, height]);
+
+            let M = cv.getPerspectiveTransform(srcTri, dstTri);
+            cv.warpPerspective(srcMat, dst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+            // 2. Afficher la carte complète
+            cv.imshow('processing-canvas', dst);
+            let fullCardData = document.getElementById('processing-canvas').toDataURL('image/png');
+
+            // 3. Découper la photo (Tiers droit approximatif)
+            let rectPhoto = new cv.Rect(width * 0.65, height * 0.15, width * 0.30, height * 0.60);
+            let photoMat = dst.roi(rectPhoto);
+            cv.imshow('processing-canvas', photoMat);
+            let photoData = document.getElementById('processing-canvas').toDataURL('image/png');
+
+            // Mise à jour UI Images
+            updateImagePreview('card-preview', fullCardData);
+            updateImagePreview('face-preview', photoData);
+
+            // Nettoyage OpenCV
+            srcTri.delete(); dstTri.delete(); M.delete(); dst.delete(); photoMat.delete();
+
+            // 4. Lancer OCR
+            await performOCR(fullCardData);
+        }
+
+        function updateImagePreview(id, dataUrl) {
+            const container = document.getElementById(id);
+            container.innerHTML = `<img src="${dataUrl}" alt="Scan">`;
+        }
+
+        // --- OCR & Extraction (Tesseract.js) ---
+        async function performOCR(imageData) {
+            try {
+                const worker = await Tesseract.createWorker('fra'); // Langue française
+                const ret = await worker.recognize(imageData);
+                console.log("Texte brut:", ret.data.text);
+
+                const extractedData = extractDataFromText(ret.data.text);
+                displayResults(extractedData);
+
+                // Simulation Sauvegarde
+                if (isValidData(extractedData)) {
+                    await saveToDatabase({
+                        ...extractedData,
+                        cardImage: imageData
+                    });
+                } else {
+                    console.warn("Données insuffisantes pour sauvegarde auto");
+                    resetScanner(3000); // Réessayer après 3s si échec
+                }
+
+                await worker.terminate();
+            } catch (err) {
+                console.error("Erreur OCR:", err);
+                statusBadge.textContent = "Erreur OCR";
+                resetScanner(2000);
+            }
+        }
+
+        function extractDataFromText(text) {
+            // Regex simplifiées pour la démo - à affiner selon les vraies cartes
+            const patterns = {
+                name: /(?:Nom|Assuré|Souscripteur)\s*[:\.]?\s*([A-Z\s]+)/i,
+                policy: /(?:Police|Contrat|N°)\s*[:\.]?\s*([A-Z0-9-]+)/i,
+                id: /(?:Matricule|ID|N° Assuré)\s*[:\.]?\s*([A-Z0-9]+)/i,
+                date: /(?:Né le|Date|Naissance)\s*[:\.]?\s*(\d{2}[\/\.]\d{2}[\/\.]\d{4})/i,
+                sex: /(?:Sexe|Genre)\s*[:\.]?\s*([MF])/i
+            };
+
+            let data = {};
+            for (let key in patterns) {
+                let match = text.match(patterns[key]);
+                data[key] = match ? match[1].trim() : null;
+            }
+
+            // Fallback heuristique si regex échoue (chercher des motifs communs)
+            if (!data.date) {
+                let dateMatch = text.match(/\d{2}\/\d{2}\/\d{4}/);
+                if (dateMatch) data.date = dateMatch[0];
+            }
+
+            return data;
+        }
+
+        function displayResults(data) {
+            const setVal = (id, val) => {
+                const el = document.getElementById(id);
+                el.textContent = val || "Non détecté";
+                el.className = val ? "data-value" : "data-value empty";
+            };
+
+            setVal('res-name', data.name);
+            setVal('res-policy', data.policy);
+            setVal('res-id', data.id);
+            setVal('res-date', data.date);
+            setVal('res-sex', data.sex);
+        }
+
+        function isValidData(data) {
+            // Validation: Au moins 3 champs trouvés
+            let count = 0;
+            if (data.name) count++;
+            if (data.policy) count++;
+            if (data.id) count++;
+            if (data.date) count++;
+            return count >= 3;
+        }
+
+        // --- Sauvegarde & Feedback ---
+        async function saveToDatabase(jsonData) {
+            console.log("Envoi API simulé:", jsonData);
+
+            // Feedback Visuel
+            successFeedback.classList.add('show');
+            statusBadge.textContent = "Enregistré !";
+            statusBadge.className = "status-badge ready";
+
+            // Simuler délai réseau
+            await new Promise(r => setTimeout(r, 1000));
+
+            resetScanner(2000);
+        }
+
+        function resetScanner(delay = 0) {
+            setTimeout(() => {
+                successFeedback.classList.remove('show');
+                statusBadge.textContent = "Prêt à scanner";
+                statusBadge.className = "status-badge ready";
+
+                // Reset UI
+                document.querySelectorAll('.data-value').forEach(el => {
+                    el.textContent = "En attente...";
+                    el.className = "data-value empty";
+                });
+                document.getElementById('card-preview').innerHTML = '<span>Carte Complète</span>';
+                document.getElementById('face-preview').innerHTML = '<span>Photo</span>';
+
+                // Reset State
+                state.lastContour = null;
+                state.stabilityStart = 0;
+                state.isScanning = true;
+
+            }, delay);
+        }
+
+        // --- Audio ---
+        function playBeep() {
+            // Bip simple avec AudioContext
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (AudioContext) {
+                const ctx = new AudioContext();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = 800;
+                gain.gain.value = 0.1;
+                osc.start();
+                setTimeout(() => osc.stop(), 150);
+            }
+        }
+
+    </script>
+</body>
+
+</html>
