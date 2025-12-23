@@ -3,8 +3,13 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Scanner Intelligent de Carte d'Assurance</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <!-- Chargement des librairies externes -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady()"></script>
@@ -30,6 +35,14 @@
             overflow: hidden;
         }
 
+        @media (max-width: 768px) {
+            body {
+                overflow-y: auto;
+                height: auto;
+                min-height: 100vh;
+            }
+        }
+
         header {
             background: var(--surface);
             padding: 1rem 2rem;
@@ -38,6 +51,19 @@
             justify-content: space-between;
             align-items: center;
             box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        @media (max-width: 768px) {
+            header {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1rem;
+            }
         }
 
         h1 {
@@ -56,6 +82,7 @@
             font-weight: 500;
             background: #e2e8f0;
             color: #64748b;
+            white-space: nowrap;
         }
 
         .status-badge.ready {
@@ -74,7 +101,27 @@
             grid-template-columns: 1fr 400px;
             gap: 2rem;
             padding: 2rem;
-            height: calc(100vh - 80px);
+            height: 100%;
+            overflow: hidden;
+        }
+
+        @media (max-width: 1024px) {
+            main {
+                grid-template-columns: 1fr 300px;
+                gap: 1rem;
+                padding: 1rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            main {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto;
+                height: auto;
+                overflow: visible;
+                padding: 1rem;
+                gap: 1.5rem;
+            }
         }
 
         /* Zone Vidéo */
@@ -87,6 +134,16 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 100%;
+            aspect-ratio: 16/9;
+            max-height: 80vh;
+        }
+
+        @media (max-width: 768px) {
+            .video-container {
+                aspect-ratio: 3/4;
+                max-height: 60vh;
+            }
         }
 
         video {
@@ -117,6 +174,13 @@
             box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
         }
 
+        @media (max-width: 768px) {
+            .scan-guide {
+                width: 85%;
+                height: 30%;
+            }
+        }
+
         .scan-guide.active {
             border-color: var(--success);
             border-style: solid;
@@ -135,6 +199,14 @@
             gap: 1.5rem;
             overflow-y: auto;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            height: 100%;
+        }
+
+        @media (max-width: 768px) {
+            aside {
+                height: auto;
+                overflow-y: visible;
+            }
         }
 
         .preview-section {
@@ -186,6 +258,7 @@
             border-radius: 0.5rem;
             font-weight: 500;
             min-height: 1.5rem;
+            word-break: break-all;
         }
 
         .data-value.empty {
@@ -681,6 +754,15 @@
                 osc.start();
                 setTimeout(() => osc.stop(), 150);
             }
+        }
+
+        // --- PWA Service Worker ---
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker enregistré', reg))
+                    .catch(err => console.log('Erreur Service Worker', err));
+            });
         }
 
     </script>
