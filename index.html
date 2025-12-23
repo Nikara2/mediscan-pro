@@ -368,7 +368,7 @@
         const CONFIG = {
             stabilityDuration: 1500, // ms
             stabilityTolerance: 0.05, // 5% de mouvement toléré
-            minContourArea: 10000,
+            minContourArea: 5000, // REDUIT: 10000 -> 5000 pour meilleure détection
             aspectRatioTolerance: 0.2, // Tolérance pour le ratio carte de crédit (1.58)
             cardAspectRatio: 1.586
         };
@@ -460,9 +460,9 @@
             let blurred = new cv.Mat();
             cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-            // Détection de bords Canny
+            // Détection de bords Canny (Seuils plus bas pour mieux détecter)
             let edges = new cv.Mat();
-            cv.Canny(blurred, edges, 75, 200);
+            cv.Canny(blurred, edges, 30, 100);
 
             // Trouver les contours
             let contours = new cv.MatVector();
@@ -473,6 +473,9 @@
             let bestContour = null;
             let bestApprox = null;
 
+            // Nettoyage overlay
+            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
+
             for (let i = 0; i < contours.size(); ++i) {
                 let cnt = contours.get(i);
                 let area = cv.contourArea(cnt);
@@ -480,7 +483,7 @@
                 if (area > CONFIG.minContourArea) {
                     let peri = cv.arcLength(cnt, true);
                     let approx = new cv.Mat();
-                    cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+                    cv.approxPolyDP(cnt, approx, 0.04 * peri, true); // Plus tolérant
 
                     if (approx.rows === 4) {
                         // Vérifier si c'est le plus grand rectangle
@@ -494,9 +497,6 @@
                     }
                 }
             }
-
-            // Nettoyage overlay
-            ctxOverlay.clearRect(0, 0, overlay.width, overlay.height);
 
             if (bestApprox) {
                 // Dessiner le contour détecté
